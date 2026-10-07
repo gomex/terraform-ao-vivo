@@ -276,6 +276,21 @@ PAGINA = """<!doctype html>
   .qr > div { background: #fff; padding: 8px; border-radius: 12px; }
   .qr svg { display: block; width: 150px; height: 150px; }
   .qr figcaption { color: var(--fraco); font-size: 13px; margin-top: 8px; text-transform: uppercase; letter-spacing: .08em; }
+  .qr a { display: block; color: inherit; text-decoration: none; cursor: zoom-in; }
+  .qr a:hover > div, .qr a:focus-visible > div { outline: 3px solid var(--amarelo); outline-offset: 3px; }
+  .qr .ampliar { display: block; color: var(--amarelo); font-size: 11px; margin-top: 2px; }
+
+  /* QR em tela cheia (#site, #codigo): para a plateia escanear de longe */
+  #tela-qr { position: fixed; inset: 0; z-index: 10; background: var(--fundo); padding: 16px;
+             display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; cursor: zoom-out; }
+  #tela-qr .grande { --lado: min(calc(100vw - 32px), calc(100vh - 180px)); width: var(--lado); height: var(--lado);
+                     background: #fff; border-radius: 16px; overflow: hidden; }
+  #tela-qr .grande svg { display: block; width: 100%; height: 100%; shape-rendering: crispEdges; }
+  #tela-qr .grande-titulo { margin: 0; font-size: clamp(28px, 6vw, 64px); font-weight: 800; text-align: center; }
+  #tela-qr .grande-url { margin: 0; font-family: ui-monospace, monospace; font-size: clamp(16px, 3vw, 32px);
+                         color: var(--amarelo); overflow-wrap: anywhere; text-align: center; }
+  #tela-qr button { position: absolute; top: 16px; right: 16px; background: var(--cartao); color: var(--texto);
+                    border: 1px solid var(--borda); border-radius: 10px; padding: 8px 14px; font: inherit; cursor: pointer; }
   .contribua { display: block; margin-top: 12px; padding: 12px 18px; border-radius: 12px; border: 1px dashed var(--roxo);
                color: var(--texto); text-decoration: none; font-size: 16px; overflow-wrap: anywhere; }
   .contribua b { color: #a974ff; }
@@ -338,10 +353,18 @@ PAGINA = """<!doctype html>
       <p id="erro"></p>
     </div>
     <div class="qrs">
-      <figure class="qr"><div id="qr-site"></div><figcaption>abra no celular</figcaption></figure>
-      <figure class="qr" id="qr-repo-caixa" hidden><div id="qr-repo"></div><figcaption>mande um PR</figcaption></figure>
+      <figure class="qr"><a href="#site" title="Ampliar QR Code"><div id="qr-site"></div>
+        <figcaption>abra no celular<span class="ampliar">clique para ampliar</span></figcaption></a></figure>
+      <figure class="qr" id="qr-repo-caixa" hidden><a href="#codigo" title="Ampliar QR Code"><div id="qr-repo"></div>
+        <figcaption>mande um PR<span class="ampliar">clique para ampliar</span></figcaption></a></figure>
     </div>
   </header>
+  <div id="tela-qr" hidden>
+    <button type="button" id="fechar-qr">Fechar &times;</button>
+    <div class="grande" id="qr-grande"></div>
+    <p class="grande-titulo" id="qr-grande-titulo"></p>
+    <p class="grande-url" id="qr-grande-url"></p>
+  </div>
   <div class="servido" id="servido"></div>
   <a class="contribua" id="contribua" target="_blank" rel="noopener" hidden>
     Quer mudar esta página ou o número de máquinas? Mande um PR &rarr; <b></b>
@@ -466,27 +489,55 @@ PAGINA = """<!doctype html>
     }
   }
 
-  function desenharQr(id, texto) {
+  function desenharQr(id, texto, opcoes = { cellSize: 4, margin: 0 }) {
     try {
       const qr = qrcode(0, "M");
       qr.addData(texto);
       qr.make();
-      $(id).innerHTML = qr.createSvgTag({ cellSize: 4, margin: 0 });
+      $(id).innerHTML = qr.createSvgTag(opcoes);
     } catch (e) {}
   }
+
+  // Sem o #site/#codigo, para o QR não abrir a versão ampliada no celular de quem escaneia
+  const urlSite = location.origin + location.pathname;
+  const ampliaveis = {
+    site: { titulo: "Abra no celular", url: urlSite },
+    codigo: { titulo: "Mande um PR", url: null }, // chega pela /api/status
+  };
+
+  function abrirQrDoHash() {
+    const alvo = ampliaveis[location.hash.slice(1)];
+    if (!alvo || !alvo.url) { $("tela-qr").hidden = true; return; }
+    desenharQr("qr-grande", alvo.url, { cellSize: 8, margin: 32 }); // margem de 4 módulos, exigida pelos leitores
+    $("qr-grande-titulo").textContent = alvo.titulo;
+    $("qr-grande-url").textContent = alvo.url.replace(/^https?:[/][/]/, "").replace(/[/]$/, "");
+    $("tela-qr").hidden = false;
+  }
+
+  function fecharQr() {
+    history.replaceState(null, "", location.pathname + location.search);
+    $("tela-qr").hidden = true;
+  }
+
+  window.addEventListener("hashchange", abrirQrDoHash);
+  $("tela-qr").addEventListener("click", fecharQr);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("tela-qr").hidden) fecharQr(); });
 
   let repositorioMostrado = false;
   function mostrarRepositorio(url) {
     if (!url || repositorioMostrado) return;
     repositorioMostrado = true;
+    ampliaveis.codigo.url = url;
     desenharQr("qr-repo", url);
     $("qr-repo-caixa").hidden = false;
     $("contribua").href = url;
     $("contribua").querySelector("b").textContent = url.replace(/^https?:[/][/]/, "");
     $("contribua").hidden = false;
+    abrirQrDoHash(); // quem chegou direto em /#codigo
   }
 
-  desenharQr("qr-site", location.href);
+  desenharQr("qr-site", urlSite);
+  abrirQrDoHash();
   atualizar();
   setInterval(atualizar, 2000);
 </script>
