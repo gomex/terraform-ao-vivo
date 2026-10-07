@@ -1,0 +1,58 @@
+name: AMI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "ansible/**"
+      - "packer/**"
+      - ".github/workflows/ami.yml"
+  workflow_dispatch:
+    inputs:
+      versao:
+        description: "Versão exibida no app (vazio = v<número da execução>)"
+        required: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  VERSAO: ${{ inputs.versao || format('v{0}', github.run_number) }}
+
+jobs:
+  ami:
+    name: packer build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-packer@v3
+        with:
+          version: latest
+
+      - name: Instala o Ansible
+        run: pipx install ansible-core
+
+      - name: packer init
+        run: packer init packer
+
+      - name: packer build
+        run: >-
+          packer build -color=false
+          -var "regiao=${{ env.AWS_REGION }}"
+          -var "versao_app=${{ env.VERSAO }}"
+          -var "repositorio=${{ github.server_url }}/${{ github.repository }}"
+          packer
+
+  # AMI nova => terraform apply => instance refresh no Auto Scaling Group
+  deploy:
+    needs: ami
+    uses: ./.github/workflows/terraform.yml

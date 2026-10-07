@@ -1,0 +1,120 @@
+# Roda UMA vez, localmente, antes de usar o GitHub Actions.
+# Cria o bucket do state remoto e a role que o GitHub assume via OIDC
+# (sem access key guardada em secret).
+
+terraform {
+  required_version = ">= 1.10"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.regiao
+
+  default_tags {
+    tags = {
+      Projeto       = "terraform-ao-vivo"
+      GerenciadoPor = "terraform"
+    }
+  }
+}
+
+variable "regiao" {
+  type    = string
+  default = "us-east-1"
+}
+
+variable "repositorio" {
+  description = "Repositório do GitHub (dono/nome) que pode assumir a role."
+  type        = string
+  default     = "gomex/terraform-ao-vivo"
+}
+
+variable "criar_oidc_provider" {
+  description = "Use false se a conta já tiver o OIDC provider do GitHub (só pode existir um por conta)."
+  type        = bool
+  default     = true
+}
+
+module "state" {
+  source  = "terraform-aws-modules/s3-bucket/aws"
+  version = "~> 4.0"
+
+  bucket_prefix = "terraform-ao-vivo-state-"
+
+  versioning = {
+    enabled = true
+  }
+
+  server_side_encryption_configuration = {
+    rule = {
+      apply_server_side_encryption_by_default = {
+        sse_algorithm = "AES256"
+      }
+    }
+  }
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+module "github_oidc_provider" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-github-oidc-provider"
+  version = "~> 5.0"
+
+  create = var.criar_oidc_provider
+}
+
+module "github_oidc_role" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-github-oidc-role"
+  version = "~> 5.0"
+
+  name = "terraform-ao-vivo-github"
+
+  # Só a main (apply/AMI/destroy) e PRs abertos de branches deste repositório.
+  # NÃO use "<repo>:*": isso incluiria o environment de PRs de fork abaixo.
+  subjects = [
+    "${var.repositorio}:ref:refs/heads/main",
+    "${var.repositorio}:pull_request",
+  ]
+
+  # Demo: a pipeline cria VPC, ALB, ASG, IAM, Route53, ACM e AMIs.
+  policies = {
+    Admin = "arn:aws:iam::aws:policy/AdministratorAccess"
+  }
+
+  depends_on = [module.github_oidc_provider]
+}
+
+# Role só de leitura para o plan de PRs de fork, liberada apenas pelo
+# environment "plan-fork" (que exige a aprovação de um revisor no GitHub).
+module "github_oidc_role_plan" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-github-oidc-role"
+  version = "~> 5.0"
+
+  name     = "terraform-ao-vivo-github-plan"
+  subjects = ["${var.repositorio}:environment:plan-fork"]
+
+  policies = {
+    ReadOnly = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+  }
+
+  depends_on = [module.github_oidc_provider]
+}
+
+output "variaveis_do_github" {
+  description = "Rode estes comandos (ou cadastre em Settings > Secrets and variables > Actions > Variables)."
+  value       = <<-EOT
+    gh variable set AWS_ROLE_ARN --repo ${var.repositorio} --body "${module.github_oidc_role.arn}"
+    gh variable set AWS_PLAN_ROLE_ARN --repo ${var.repositorio} --body "${module.github_oidc_role_plan.arn}"
+    gh variable set AWS_REGION --repo ${var.repositorio} --body "${var.regiao}"
+    # coloque o bucket "${module.state.s3_bucket_id}" em terraform/versions.tf (backend "s3")
+  EOT
+}

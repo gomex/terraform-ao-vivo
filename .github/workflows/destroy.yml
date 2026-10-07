@@ -1,0 +1,49 @@
+name: Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmacao:
+        description: 'Digite "destruir" para apagar toda a infraestrutura'
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  destroy:
+    if: inputs.confirmacao == 'destruir'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: terraform-state
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.x"
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: >-
+          terraform init
+          -backend-config="region=${{ env.AWS_REGION }}"
+
+      - name: terraform destroy
+        run: terraform destroy -auto-approve

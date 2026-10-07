@@ -1,0 +1,62 @@
+name: Terraform
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform.yml"
+  workflow_dispatch:
+  workflow_call: # chamado pelo workflow da AMI depois do build
+
+permissions:
+  id-token: write # OIDC com a AWS
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  apply:
+    name: terraform apply
+    runs-on: ubuntu-latest
+    concurrency:
+      group: terraform-state
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.x"
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: >-
+          terraform init
+          -backend-config="region=${{ env.AWS_REGION }}"
+
+      - name: terraform plan
+        run: terraform plan -out=tfplan
+
+      - name: terraform apply
+        run: terraform apply -auto-approve tfplan
+
+      - name: Resumo
+        run: |
+          {
+            echo "### 🚀 Deploy feito"
+            echo "- URL: $(terraform output -raw url)"
+            echo "- AMI: $(terraform output -raw ami)"
+          } >> "$GITHUB_STEP_SUMMARY"

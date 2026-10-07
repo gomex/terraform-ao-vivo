@@ -1,0 +1,17 @@
+[Unit]
+Description=Contador de máquinas (terraform ao vivo)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Environment=APP_VERSION={{ versao_app }}
+Environment=REPOSITORIO={{ repositorio }}
+Environment=PORT=80
+ExecStart=/usr/bin/python3 /opt/contador/contador.py
+DynamicUser=yes
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

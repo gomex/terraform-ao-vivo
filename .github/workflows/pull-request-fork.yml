@@ -1,0 +1,116 @@
+name: Pull Request (fork)
+
+# PRs de fork (a plateia) não recebem credenciais no evento pull_request.
+# Aqui usamos pull_request_target, que roda SEMPRE a versão deste arquivo
+# que está na main (o PR não consegue alterá-lo), e protegemos o acesso à AWS
+# com o environment "plan-fork": o job só começa depois que um revisor aprova.
+#
+# Antes de aprovar, revise o diff. O plan pode executar código do PR
+# (ex.: data "external", providers ou módulos de origem desconhecida).
+# Por isso a role usada aqui é só de leitura.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions: {}
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  plan:
+    name: terraform plan (aguarda aprovação)
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    environment: plan-fork
+    permissions:
+      id-token: write # OIDC com a role só de leitura
+      contents: read
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+      # O commit exato que disparou esta execução: um push novo no PR gera
+      # outra execução, que precisa de outra aprovação.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.x"
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: terraform init
+        run: >-
+          terraform init
+          -backend-config="region=${{ env.AWS_REGION }}"
+
+      - name: terraform validate
+        run: terraform validate
+
+      # -lock=false: a role é só de leitura e não pode gravar o lock no bucket
+      - name: terraform plan
+        run: terraform plan -lock=false -no-color -out=tfplan
+
+      - name: Exporta o plan em texto
+        run: terraform show -no-color tfplan > plan.txt
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: plan
+          path: terraform/plan.txt
+          retention-days: 1
+
+  # Separado de propósito: este job pode escrever no PR, mas nunca executa
+  # código do PR, só lê o texto gerado pelo job anterior.
+  comentar:
+    name: comenta o plan
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: plan
+
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require("fs");
+            const marcador = "<!-- terraform-plan -->";
+            let plano = fs.readFileSync("plan.txt", "utf8");
+            const resumo = plano.split("\n").find((l) => /^(Plan:|No changes)/.test(l)) || "Plano gerado";
+            if (plano.length > 60000) plano = plano.slice(0, 60000) + "\n... (cortado)";
+            const sha = context.payload.pull_request.head.sha.slice(0, 7);
+            const body = [
+              marcador,
+              `### Terraform plan (commit ${sha})\n**${resumo}**`,
+              "<details><summary>Ver o plano completo</summary>\n",
+              "```terraform", plano, "```",
+              "</details>",
+            ].join("\n");
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comentarios = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const existente = comentarios.find((c) => c.body.includes(marcador));
+            if (existente) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existente.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }

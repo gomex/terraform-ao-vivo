@@ -1,0 +1,41 @@
+---
+- name: Instala o contador de máquinas na AMI
+  hosts: all
+  become: true
+  vars:
+    versao_app: v1
+    repositorio: https://github.com/gomex/terraform-ao-vivo
+
+  tasks:
+    - name: Espera o cloud-init terminar (ele segura o apt no primeiro boot)
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+
+    - name: Instala o boto3
+      ansible.builtin.apt:
+        name: python3-boto3
+        update_cache: true
+
+    - name: Cria o diretório do app
+      ansible.builtin.file:
+        path: /opt/contador
+        state: directory
+        mode: "0755"
+
+    - name: Copia o app
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../app/contador.py"
+        dest: /opt/contador/contador.py
+        mode: "0755"
+
+    - name: Cria o serviço do systemd
+      ansible.builtin.template:
+        src: contador.service.j2
+        dest: /etc/systemd/system/contador.service
+        mode: "0644"
+
+    - name: Habilita o serviço para subir no boot
+      ansible.builtin.systemd:
+        name: contador
+        enabled: true
+        daemon_reload: true
