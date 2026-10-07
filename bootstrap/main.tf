@@ -35,6 +35,15 @@ variable "repositorio" {
   default     = "gomex/terraform-ao-vivo"
 }
 
+# O repositório usa o "sub" imutável do OIDC: dono@id/repo@id. Assim, um repo
+# recriado com o mesmo nome não assume a role. Veja o prefixo em:
+#   gh api repos/<dono>/<repo>/actions/oidc/customization/sub
+variable "repositorio_oidc" {
+  description = "Prefixo do sub do token OIDC do GitHub (dono@id/repo@id)."
+  type        = string
+  default     = "gomex@95132/terraform-ao-vivo@1395417554"
+}
+
 variable "criar_oidc_provider" {
   description = "Use false se a conta já tiver o OIDC provider do GitHub (só pode existir um por conta)."
   type        = bool
@@ -81,8 +90,8 @@ module "github_oidc_role" {
   # Só a main (apply/AMI/destroy) e PRs abertos de branches deste repositório.
   # NÃO use "<repo>:*": isso incluiria o environment de PRs de fork abaixo.
   subjects = [
-    "${var.repositorio}:ref:refs/heads/main",
-    "${var.repositorio}:pull_request",
+    "${var.repositorio_oidc}:ref:refs/heads/main",
+    "${var.repositorio_oidc}:pull_request",
   ]
 
   # Demo: a pipeline cria VPC, ALB, ASG, IAM, Route53, ACM e AMIs.
@@ -100,7 +109,7 @@ module "github_oidc_role_plan" {
   version = "~> 5.0"
 
   name     = "terraform-ao-vivo-github-plan"
-  subjects = ["${var.repositorio}:environment:plan-fork"]
+  subjects = ["${var.repositorio_oidc}:environment:plan-fork"]
 
   policies = {
     ReadOnly = "arn:aws:iam::aws:policy/ReadOnlyAccess"
