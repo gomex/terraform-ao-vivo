@@ -7,7 +7,6 @@ data "aws_availability_zones" "disponiveis" {
   state = "available"
 }
 
-# A AMI mais recente criada pelo Packer (nome começando com var.nome)
 data "aws_ami" "contador" {
   most_recent = true
   owners      = ["self"]
@@ -22,10 +21,6 @@ data "aws_route53_zone" "dominio" {
   name = var.dominio
 }
 
-################################################################################
-# Rede: VPC com subnets públicas em 2 zonas (sem NAT para ficar barato e rápido)
-################################################################################
-
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.0"
@@ -39,10 +34,6 @@ module "vpc" {
   enable_nat_gateway      = false
 }
 
-################################################################################
-# Certificado HTTPS validado automaticamente pelo Route53
-################################################################################
-
 module "acm" {
   source  = "terraform-aws-modules/acm/aws"
   version = "~> 5.0"
@@ -52,10 +43,6 @@ module "acm" {
   validation_method   = "DNS"
   wait_for_validation = true
 }
-
-################################################################################
-# Load balancer
-################################################################################
 
 module "alb" {
   source  = "terraform-aws-modules/alb/aws"
@@ -115,7 +102,7 @@ module "alb" {
       port                 = 80
       target_type          = "instance"
       deregistration_delay = 10
-      create_attachment    = false # quem registra as máquinas é o Auto Scaling Group
+      create_attachment    = false
 
       health_check = {
         enabled             = true
@@ -129,10 +116,6 @@ module "alb" {
     }
   }
 }
-
-################################################################################
-# Máquinas: security group + Auto Scaling Group com a AMI do Packer
-################################################################################
 
 module "sg_maquinas" {
   source  = "terraform-aws-modules/security-group/aws"
@@ -157,7 +140,6 @@ module "asg" {
 
   name = var.nome
 
-  # >>> O número que a plateia vai ver mudando na tela <<<
   desired_capacity = var.quantidade_de_maquinas
   min_size         = var.minimo_de_maquinas
   max_size         = var.maximo_de_maquinas
@@ -174,7 +156,6 @@ module "asg" {
     }
   }
 
-  # Launch template
   launch_template_name   = var.nome
   update_default_version = true
   image_id               = data.aws_ami.contador.id
@@ -188,24 +169,21 @@ module "asg" {
     http_put_response_hop_limit = 1
   }
 
-  # Permissão para o app mostrar a infra (ASG, EC2, ALB, ACM, Route53) e SSM para debug
   create_iam_instance_profile = true
   iam_role_name               = var.nome
   iam_role_policies = {
     AutoScalingReadOnly = "arn:aws:iam::aws:policy/AutoScalingReadOnlyAccess"
-    EC2ReadOnly         = "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess" # inclui elasticloadbalancing:Describe*
+    EC2ReadOnly         = "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
     ACMReadOnly         = "arn:aws:iam::aws:policy/AWSCertificateManagerReadOnly"
     Route53ReadOnly     = "arn:aws:iam::aws:policy/AmazonRoute53ReadOnlyAccess"
     SSM                 = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
   }
 
-  # O app lê estas tags para achar o registro DNS e mostrar no site
   autoscaling_group_tags = {
     Route53Zona     = data.aws_route53_zone.dominio.zone_id
     Route53Registro = local.fqdn
   }
 
-  # Nova AMI => troca as máquinas aos poucos, sem derrubar o site
   instance_refresh = {
     strategy = "Rolling"
     preferences = {
@@ -214,10 +192,6 @@ module "asg" {
     }
   }
 }
-
-################################################################################
-# DNS: demo.seudominio -> load balancer
-################################################################################
 
 module "dns" {
   source  = "terraform-aws-modules/route53/aws//modules/records"

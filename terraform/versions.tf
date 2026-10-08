@@ -8,7 +8,6 @@ terraform {
     }
   }
 
-  # bucket criado pelo bootstrap; a region é passada no init (-backend-config)
   backend "s3" {
     bucket       = "terraform-ao-vivo-state-aws-evento"
     key          = "terraform-ao-vivo.tfstate"

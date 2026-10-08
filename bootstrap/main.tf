@@ -1,7 +1,3 @@
-# Roda UMA vez, localmente, antes de usar o GitHub Actions.
-# Cria o bucket do state remoto e a role que o GitHub assume via OIDC
-# (sem access key guardada em secret).
-
 terraform {
   required_version = ">= 1.10"
 
@@ -35,9 +31,6 @@ variable "repositorio" {
   default     = "gomex/terraform-ao-vivo"
 }
 
-# O repositório usa o "sub" imutável do OIDC: dono@id/repo@id. Assim, um repo
-# recriado com o mesmo nome não assume a role. Veja o prefixo em:
-#   gh api repos/<dono>/<repo>/actions/oidc/customization/sub
 variable "repositorio_oidc" {
   description = "Prefixo do sub do token OIDC do GitHub (dono@id/repo@id)."
   type        = string
@@ -87,14 +80,11 @@ module "github_oidc_role" {
 
   name = "terraform-ao-vivo-github"
 
-  # Só a main (apply/AMI/destroy) e PRs abertos de branches deste repositório.
-  # NÃO use "<repo>:*": isso incluiria o environment de PRs de fork abaixo.
   subjects = [
     "${var.repositorio_oidc}:ref:refs/heads/main",
     "${var.repositorio_oidc}:pull_request",
   ]
 
-  # Demo: a pipeline cria VPC, ALB, ASG, IAM, Route53, ACM e AMIs.
   policies = {
     Admin = "arn:aws:iam::aws:policy/AdministratorAccess"
   }
@@ -102,8 +92,6 @@ module "github_oidc_role" {
   depends_on = [module.github_oidc_provider]
 }
 
-# Role só de leitura para o plan de PRs de fork, liberada apenas pelo
-# environment "plan-fork" (que exige a aprovação de um revisor no GitHub).
 module "github_oidc_role_plan" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-github-oidc-role"
   version = "~> 5.0"

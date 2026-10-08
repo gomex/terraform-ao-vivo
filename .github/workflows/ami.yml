@@ -52,7 +52,6 @@ jobs:
           -var "repositorio=${{ github.server_url }}/${{ github.repository }}"
           packer
 
-  # AMI nova => terraform apply => instance refresh no Auto Scaling Group
   deploy:
     needs: ami
     uses: ./.github/workflows/terraform.yml

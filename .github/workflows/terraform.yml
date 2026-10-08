@@ -7,10 +7,10 @@ on:
       - "terraform/**"
       - ".github/workflows/terraform.yml"
   workflow_dispatch:
-  workflow_call: # chamado pelo workflow da AMI depois do build
+  workflow_call:
 
 permissions:
-  id-token: write # OIDC com a AWS
+  id-token: write
   contents: read
 
 env:

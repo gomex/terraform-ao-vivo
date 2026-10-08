@@ -1,7 +1,3 @@
-# Os módulos saíram da raiz e foram para dentro de modules/app-escalavel.
-# Estes blocos avisam o Terraform para só mover no state, sem recriar nada.
-# Depois de um apply com sucesso, este arquivo pode ser apagado.
-
 moved {
   from = module.vpc
   to   = module.app.module.vpc

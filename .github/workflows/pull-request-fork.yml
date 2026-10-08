@@ -1,14 +1,5 @@
 name: Pull Request (fork)
 
-# PRs de fork (a plateia) não recebem credenciais no evento pull_request.
-# Aqui usamos pull_request_target, que roda SEMPRE a versão deste arquivo
-# que está na main (o PR não consegue alterá-lo), e protegemos o acesso à AWS
-# com o environment "plan-fork": o job só começa depois que um revisor aprova.
-#
-# Antes de aprovar, revise o diff. O plan pode executar código do PR
-# (ex.: data "external", providers ou módulos de origem desconhecida).
-# Por isso a role usada aqui é só de leitura.
-
 on:
   pull_request_target:
     types: [opened, synchronize, reopened]
@@ -27,15 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: plan-fork
     permissions:
-      id-token: write # OIDC com a role só de leitura
+      id-token: write
       contents: read
     defaults:
       run:
         working-directory: terraform
 
     steps:
-      # O commit exato que disparou esta execução: um push novo no PR gera
-      # outra execução, que precisa de outra aprovação.
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
@@ -63,7 +52,6 @@ jobs:
       - name: terraform validate
         run: terraform validate
 
-      # -lock=false: a role é só de leitura e não pode gravar o lock no bucket
       - name: terraform plan
         run: terraform plan -lock=false -no-color -out=tfplan
 
@@ -76,8 +64,6 @@ jobs:
           path: terraform/plan.txt
           retention-days: 1
 
-  # Separado de propósito: este job pode escrever no PR, mas nunca executa
-  # código do PR, só lê o texto gerado pelo job anterior.
   comentar:
     name: comenta o plan
     needs: plan
