@@ -48,5 +48,3 @@ packer_cache/
 # Python
 __pycache__/
 
-# Claude Code: instruções pessoais locais
-CLAUDE.local.md
