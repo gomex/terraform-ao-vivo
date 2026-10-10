@@ -5,7 +5,7 @@ module "app" {
   dominio    = "mesa.gomex.me"
   subdominio = "aovivo"
 
-  quantidade_de_maquinas = 2
+  quantidade_de_maquinas = 7
   minimo_de_maquinas     = 1
   maximo_de_maquinas     = 10
   tipo_instancia         = "t3.micro"
