@@ -347,7 +347,7 @@ PAGINA = """<!doctype html>
 <main>
   <header class="topo">
     <div>
-      <p class="titulo">Terraform ao vivo</p>
+      <p class="titulo">Terraform ao vivo em Salvador-Bahia</p>
       <p class="numero" id="numero">&middot;</p>
       <p class="legenda" id="legenda">carregando&hellip;</p>
       <p id="erro"></p>
